@@ -14,8 +14,9 @@ from .config import Settings
 from .db import Database
 
 
-def migrate(source,source_snapshots,target_snapshots,database):
+def migrate(source,source_snapshots,target_snapshots,database,snapshot_storage='filesystem',max_upload_bytes=20*1024*1024):
     if not database.url:raise ValueError('Migration requires a PostgreSQL target')
+    if snapshot_storage not in ('filesystem','database'):raise ValueError('Unknown snapshot storage mode')
     source=Path(source);source_snapshots=Path(source_snapshots);target_snapshots=Path(target_snapshots)
     connection=sqlite3.connect(source.resolve().as_uri()+'?mode=ro',uri=True);connection.row_factory=sqlite3.Row
     try:
@@ -32,14 +33,19 @@ def migrate(source,source_snapshots,target_snapshots,database):
         path=source_snapshots/name
         if path.is_symlink() or not path.is_file() or path.resolve().parent!=source_snapshots.resolve():raise ValueError('A source snapshot is missing or outside its directory')
         validate_archive(path)
+        if snapshot_storage=='database' and path.stat().st_size>max_upload_bytes:
+            raise ValueError('Source archive exceeds database snapshot limit; split the project before migrating')
     copied=[]
     try:
         with database.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            for table in ('users','projects','sessions','login_flows','project_shares'):
+            for table in ('users','projects','sessions','login_flows','project_shares','project_snapshots'):
                 if db.execute(f'SELECT count(*) FROM {table}').fetchone()[0]:raise ValueError('Target database must be empty; no data was overwritten')
             target_snapshots.mkdir(parents=True,exist_ok=True)
             for name in sorted(snapshots):
+                if snapshot_storage=='database':
+                    db.execute('INSERT INTO project_snapshots (name,data) VALUES (?,?)',(name,(source_snapshots/name).read_bytes()))
+                    continue
                 destination=target_snapshots/name
                 with destination.open('xb') as output:
                     copied.append(destination)
@@ -66,7 +72,7 @@ def main():
     parser.add_argument('--target-snapshots',type=Path,required=True)
     args=parser.parse_args();settings=Settings.from_env()
     if not settings.database_url:parser.error('Set BACKALOR_DATABASE_URL to an empty cloud PostgreSQL database')
-    result=migrate(args.source,args.source_snapshots,args.target_snapshots,Database(url=settings.database_url))
+    result=migrate(args.source,args.source_snapshots,args.target_snapshots,Database(url=settings.database_url),snapshot_storage=settings.snapshot_storage,max_upload_bytes=settings.max_upload_bytes)
     print(result)
 
 

@@ -18,4 +18,4 @@ class CloudBundleTests(unittest.TestCase):
                 self.assertNotIn('.env',names)
                 self.assertFalse(any(name.startswith(('app/','backend_data/','annotations/','images_raw/','.venv','reports/')) for name in names))
                 self.assertFalse(any(name.endswith(('.sqlite3','.pt','.pyc')) for name in names))
-                self.assertTrue(all(name.startswith(('backend/','deploy/')) or name in {'Dockerfile','.dockerignore','render.yaml','requirements-backend.txt','.env.cloud.example','CLOUD.md'} for name in names))
+                self.assertTrue(all(name.startswith(('backend/','deploy/')) or name in {'Dockerfile','.dockerignore','render.yaml','requirements-backend.txt','.env.cloud.example','CLOUD.md','FREE_HOSTING.md'} for name in names))

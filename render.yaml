@@ -1,38 +1,27 @@
-# Reviewed deployment template. Provisioning creates paid resources; review in Render.
+# Free API; PostgreSQL is supplied by a separate Supabase Free project.
+# No paid Render disk or paid Render database is provisioned by this Blueprint.
 services:
   - type: web
     name: backalor-api
     runtime: docker
-    plan: 0.5c-512mb
+    plan: free
     region: frankfurt
     numInstances: 1
     healthCheckPath: /ready
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    disk:
-      name: backalor-snapshots
-      mountPath: /var/data
-      sizeGB: 5
     envVars:
       - key: BACKALOR_DATABASE_URL
-        fromDatabase:
-          name: backalor-db
-          property: connectionString
+        sync: false
       - key: BACKALOR_REQUIRE_POSTGRES
         value: "1"
+      - key: BACKALOR_SNAPSHOT_STORAGE
+        value: database
+      - key: BACKALOR_MAX_UPLOAD_BYTES
+        value: "20971520"
       - key: BACKALOR_DATA_DIR
         value: /var/data
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-
-databases:
-  - name: backalor-db
-    databaseName: backalor
-    user: backalor
-    plan: 0.1c-256mb
-    region: frankfurt
-    postgresMajorVersion: "18"
-    diskSizeGB: 5
-    ipAllowList: []

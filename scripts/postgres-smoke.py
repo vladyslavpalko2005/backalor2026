@@ -5,6 +5,7 @@ Every create_app receives a separate schema; the temporary cluster is removed.
 """
 from __future__ import annotations
 import hashlib
+import os
 from dataclasses import replace
 from pathlib import Path
 import sys
@@ -35,7 +36,10 @@ def main():
                     schemas.add(name)
                 url=urlsplit(origin);query=dict(parse_qsl(url.query));query['options']='-c search_path='+name
                 database_url=urlunsplit((url.scheme,url.netloc,url.path,urlencode(query,quote_via=quote),url.fragment))
-                app=create_app(replace(settings,database_url=database_url,require_postgres=True))
+                cloud=replace(settings,database_url=database_url,require_postgres=True)
+                if os.getenv('BACKALOR_TEST_DATABASE_SNAPSHOTS')=='1' and settings.snapshot_storage!='database':
+                    cloud=replace(cloud,snapshot_storage='database',max_upload_bytes=min(cloud.max_upload_bytes,20*1024*1024))
+                app=create_app(cloud)
                 assert not (settings.data_dir/'backalor.sqlite3').exists()
                 return app
             with patch.object(test_api,'create_app',side_effect=factory):

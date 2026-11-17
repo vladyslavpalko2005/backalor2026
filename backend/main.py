@@ -42,11 +42,16 @@ def create_app(settings=None):
     settings.data_dir.mkdir(parents=True,exist_ok=True)
     if settings.require_postgres and not settings.database_url:
         raise RuntimeError('Cloud mode requires PostgreSQL; local SQLite is disabled')
+    if settings.snapshot_storage not in ('filesystem','database'):
+        raise RuntimeError('Unknown snapshot storage mode')
+    if settings.snapshot_storage=='database' and settings.max_upload_bytes>20*1024*1024:
+        raise RuntimeError('Database snapshots require max_upload_bytes <= 20 MiB')
     database=Database(settings.data_dir/'backalor.sqlite3',url=settings.database_url)
     snapshots=settings.data_dir/'snapshots';snapshots.mkdir(exist_ok=True)
     app=FastAPI(title='Backalor API',version='1.0.0')
     app.state.settings=settings;app.state.database=database
     app.state.identity_provider=exchange_code
+    database_snapshots=settings.snapshot_storage=='database'
 
     @app.middleware('http')
     async def response_headers(request,call_next):
@@ -266,20 +271,30 @@ def create_app(settings=None):
                 await run_in_threadpool(os.fsync,stream.fileno())
             try:await run_in_threadpool(validate_archive,path)
             except Exception:raise HTTPException(422,'Invalid project ZIP archive')
+            archive_data=await run_in_threadpool(path.read_bytes) if database_snapshots else None
             with database.connect() as db:
                 db.execute('BEGIN IMMEDIATE');record=accessible_project(db,project_id,current['id'],write=True)
                 if record['version']!=version:raise HTTPException(409,'Project changed on server. Refresh before uploading.')
                 old=record['snapshot']
+                if database_snapshots:
+                    db.execute('INSERT INTO project_snapshots (name,data) VALUES (?,?)',(path.name,archive_data))
+                    if old:db.execute('DELETE FROM project_snapshots WHERE name=?',(old,))
                 db.execute('UPDATE projects SET snapshot=?,version=version+1,updated_at=? WHERE id=?',(path.name,int(time.time()),project_id))
                 result=project_view(accessible_project(db,project_id,current['id']),access_role(db,record,current['id']))
         except BaseException:
             path.unlink(missing_ok=True);raise
+        if database_snapshots:path.unlink(missing_ok=True)
         if old:(snapshots/old).unlink(missing_ok=True)
         return result
 
     @app.get('/projects/{project_id}/snapshot')
     def download(project_id:str,current=Depends(user)):
-        with database.connect() as db:record=accessible_project(db,project_id,current['id'])
+        with database.connect() as db:
+            record=accessible_project(db,project_id,current['id'])
+            if database_snapshots and record['snapshot']:
+                archive=db.execute('SELECT data FROM project_snapshots WHERE name=?',(record['snapshot'],)).fetchone()
+                if archive is not None:
+                    return Response(content=bytes(archive['data']),media_type='application/zip',headers={'Content-Disposition':'attachment; filename=backalor-project.zip','ETag':str(record['version'])})
         if not record['snapshot'] or not (snapshots/record['snapshot']).is_file():raise HTTPException(404,'Project has no snapshot')
         return FileResponse(snapshots/record['snapshot'],media_type='application/zip',filename='backalor-project.zip',headers={'ETag':str(record['version'])})
 
@@ -287,6 +302,7 @@ def create_app(settings=None):
     def delete_project(project_id:str,current=Depends(user)):
         with database.connect() as db:
             db.execute('BEGIN IMMEDIATE');record=owned_project(db,project_id,current['id'])
+            if record['snapshot']:db.execute('DELETE FROM project_snapshots WHERE name=?',(record['snapshot'],))
             db.execute('DELETE FROM projects WHERE id=? AND owner_id=?',(project_id,current['id']))
         if record['snapshot']:(snapshots/record['snapshot']).unlink(missing_ok=True)
         return Response(status_code=204)

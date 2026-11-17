@@ -16,6 +16,7 @@ class Settings:
     max_upload_bytes: int = 512 * 1024 * 1024
     database_url: str = ''
     require_postgres: bool = False
+    snapshot_storage: str = 'filesystem'
 
     @classmethod
     def from_env(cls):
@@ -24,7 +25,9 @@ class Settings:
                      (os.getenv('BACKALOR_PUBLIC_URL') or os.getenv('RENDER_EXTERNAL_URL') or 'http://127.0.0.1:8000').rstrip('/'),
                      os.getenv('GOOGLE_CLIENT_ID',''),os.getenv('GOOGLE_CLIENT_SECRET',''),
                      database_url=os.getenv('BACKALOR_DATABASE_URL',''),
-                     require_postgres=os.getenv('BACKALOR_REQUIRE_POSTGRES','0')=='1')
+                     require_postgres=os.getenv('BACKALOR_REQUIRE_POSTGRES','0')=='1',
+                     snapshot_storage=os.getenv('BACKALOR_SNAPSHOT_STORAGE','filesystem'),
+                     max_upload_bytes=int(os.getenv('BACKALOR_MAX_UPLOAD_BYTES',str(512*1024*1024))))
         url = urlsplit(result.public_url)
         if url.scheme not in ('https','http') or not url.netloc or url.query or url.fragment or url.username or url.password or url.path:
             raise ValueError('BACKALOR_PUBLIC_URL must be an origin without a path or credentials')
@@ -34,6 +37,12 @@ class Settings:
             raise ValueError('Cloud mode requires BACKALOR_DATABASE_URL; local SQLite is disabled')
         if result.database_url and not result.database_url.startswith(('postgresql://','postgres://')):
             raise ValueError('BACKALOR_DATABASE_URL must be a PostgreSQL URL')
+        if result.snapshot_storage not in ('filesystem','database'):
+            raise ValueError('BACKALOR_SNAPSHOT_STORAGE must be filesystem or database')
+        if not 1<=result.max_upload_bytes<=512*1024*1024:
+            raise ValueError('BACKALOR_MAX_UPLOAD_BYTES must be 1–536870912')
+        if result.snapshot_storage=='database' and result.max_upload_bytes>20*1024*1024:
+            raise ValueError('Database snapshot mode requires an upload limit of at most 20 MiB')
         return result
 
     @property

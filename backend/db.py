@@ -83,6 +83,7 @@ class Database:
                 columns={row['name'] for row in db.execute('PRAGMA table_info(projects)')}
                 for column,definition in [('visibility',"TEXT NOT NULL DEFAULT 'private'"),('title_search',"TEXT NOT NULL DEFAULT ''"),('description_search',"TEXT NOT NULL DEFAULT ''")]:
                     if column not in columns: db.execute(f'ALTER TABLE projects ADD COLUMN {column} {definition}')
+                db.execute('CREATE TABLE IF NOT EXISTS project_snapshots (name TEXT PRIMARY KEY, data BLOB NOT NULL)')
                 self._indexes_and_search(db)
 
     def _initialize_postgres(self):
@@ -92,6 +93,11 @@ class Database:
                 if statement.strip(): db.execute(statement)
             for column,definition in [('visibility',"TEXT NOT NULL DEFAULT 'private'"),('title_search',"TEXT NOT NULL DEFAULT ''"),('description_search',"TEXT NOT NULL DEFAULT ''")]:
                 db.execute(f'ALTER TABLE projects ADD COLUMN IF NOT EXISTS {column} {definition}')
+            db.execute('CREATE TABLE IF NOT EXISTS project_snapshots (name TEXT PRIMARY KEY, data BYTEA NOT NULL)')
+            # Supabase exposes public-schema tables through its Data API. No browser
+            # role may read them; only this API's privileged server connection does.
+            for table in ('users','sessions','login_flows','projects','project_shares','project_snapshots'):
+                db.execute(f'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY')
             self._indexes_and_search(db)
 
     def _indexes_and_search(self,db):

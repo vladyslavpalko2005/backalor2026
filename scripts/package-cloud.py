@@ -8,7 +8,7 @@ ROOT=Path(__file__).resolve().parent.parent
 def package(target):
     target=Path(target);target.parent.mkdir(parents=True,exist_ok=True)
     fixed=['Dockerfile','.dockerignore','render.yaml','requirements-backend.txt','.env.cloud.example',
-           'CLOUD.md','deploy/docker-entrypoint.sh']
+           'CLOUD.md','FREE_HOSTING.md','deploy/docker-entrypoint.sh']
     sources=[ROOT/name for name in fixed]+sorted((ROOT/'backend').glob('*.py'))
     with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
         for source in sources:archive.write(source,source.relative_to(ROOT))
