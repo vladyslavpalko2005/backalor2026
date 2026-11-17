@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+!.env.desktop.example
+!.env.cloud.example
+!.env.local.example
+.venv*/
+__pycache__/
+*.pyc
+backend_data/
+client_secret*.json
+dist/
