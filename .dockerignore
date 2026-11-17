@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!requirements-backend.txt
+!backend/
+!backend/**
+!deploy/
+!deploy/docker-entrypoint.sh
+backend/__pycache__/
+backend/**/*.pyc
