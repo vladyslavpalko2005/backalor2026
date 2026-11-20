@@ -1,6 +1,7 @@
 from __future__ import annotations
 import io
 import json
+import re
 import secrets
 import tempfile
 import time
@@ -62,6 +63,24 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/auth/google/poll',json=payload).json(),{'status':'pending'})
     def test_callback_unknown_state_rejected(self):
         self.assertEqual(self.client.get('/auth/google/callback',params={'state':'wrong','code':'x'}).status_code,400)
+    def test_callback_page_is_localized_and_keeps_oauth_secrets_private(self):
+        payload,_=self.flow()
+        response=self.client.get('/auth/google/callback',params={'state':payload['state'],'code':'private-google-code'},
+                                 headers={'Accept-Language':'en;q=0,sk-SK;q=1,uk;q=0.5'})
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.headers['content-language'],'sk')
+        self.assertIn('<html lang="sk">',response.text)
+        for secret in (payload['state'],payload['poll_secret'],'private-google-code','one@example.com'):
+            self.assertNotIn(secret,response.text)
+        policy=response.headers['content-security-policy']
+        nonce=re.search(r"style-src 'nonce-([^']+)'",policy).group(1)
+        self.assertIn(f'<style nonce="{nonce}">',response.text)
+        self.assertIn(f'<script nonce="{nonce}">',response.text)
+        self.assertIn(f"script-src 'nonce-{nonce}'",policy)
+        self.assertNotIn('unsafe-inline',policy)
+        self.assertEqual(response.headers['cache-control'],'no-store')
+        self.assertEqual(response.headers['referrer-policy'],'no-referrer')
+        self.assertEqual(self.client.get('/health').headers['content-security-policy'],"default-src 'none'; frame-ancestors 'none'")
     def test_callback_and_token_delivery_are_single_use(self):
         payload,_=self.flow()
         self.assertEqual(self.client.get('/auth/google/callback',params={'state':payload['state'],'code':'x'}).status_code,200)

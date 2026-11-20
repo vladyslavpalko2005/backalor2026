@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from .config import Settings
 from .db import Database
 from .google_login import exchange_code
+from .auth_page import google_callback_page
 from .archives import validate_archive
 
 
@@ -59,7 +60,7 @@ def create_app(settings=None):
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Referrer-Policy']='no-referrer'
-        response.headers['Content-Security-Policy']="default-src 'none'; frame-ancestors 'none'"
+        response.headers.setdefault('Content-Security-Policy',"default-src 'none'; frame-ancestors 'none'")
         return response
 
     def user(authorization: Optional[str]=Header(default=None)):
@@ -125,15 +126,17 @@ def create_app(settings=None):
         return {'authorization_url':url,'state':state,'poll_secret':poll,'expires_in':300,'interval':2}
 
     @app.get('/auth/google/callback',response_class=HTMLResponse)
-    def callback(state: str='',code: str='',error: str=''):
+    def callback(request: Request,state: str='',code: str='',error: str=''):
+        language=request.headers.get('accept-language','')
         now=int(time.time())
         with database.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             flow=db.execute('SELECT * FROM login_flows WHERE state_hash=?',(digest(state),)).fetchone()
-            if not flow or flow['expires_at']<=now or flow['status']!='pending':raise HTTPException(400,'Invalid, expired or already used sign-in request')
+            if not flow or flow['expires_at']<=now or flow['status']!='pending':
+                return google_callback_page('inactive',language)
             db.execute('UPDATE login_flows SET status=? WHERE state_hash=?',('failed' if error or not code else 'exchanging',digest(state)))
         if error or not code:
-            return HTMLResponse('<h1>Sign-in cancelled</h1><p>Return to Backalor and try again.</p>',status_code=400)
+            return google_callback_page('cancelled',language)
         try:
             identity=app.state.identity_provider(settings,code,flow['verifier'],flow['nonce'])
             with database.connect() as db:
@@ -146,8 +149,8 @@ def create_app(settings=None):
                 db.execute('UPDATE login_flows SET status=?,user_id=? WHERE state_hash=? AND status=?',('ready',user_id,digest(state),'exchanging'))
         except Exception:
             with database.connect() as db:db.execute('UPDATE login_flows SET status=? WHERE state_hash=?',('failed',digest(state)))
-            return HTMLResponse('<h1>Sign-in failed</h1><p>Return to Backalor and start sign-in again.</p>',status_code=400)
-        return '<h1>Signed in</h1><p>You can close this tab and return to Backalor.</p>'
+            return google_callback_page('failed',language)
+        return google_callback_page('success',language)
 
     @app.post('/auth/google/poll')
     def poll(payload: PollInput):
