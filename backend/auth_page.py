@@ -117,6 +117,7 @@ PAGE = Template('''<!doctype html>
     button:active { background: #163f2b; }
     button:focus-visible { outline: 3px solid #347e55; outline-offset: 4px; }
     .close-help { margin-top: .875rem; font-size: .875rem; color: var(--muted); }
+    kbd { margin-inline-start: .5rem; padding: .125rem .375rem; border: 1px solid var(--line); border-radius: .25rem; font: inherit; white-space: nowrap; }
     footer { padding: 0 1.5rem 1.75rem; color: var(--muted); font-size: .875rem; line-height: 1.6; text-align: center; }
     @media (max-width: 40rem) {
       .masthead-inner { min-height: 4.5rem; padding: 1.25rem 1.5rem; flex-wrap: wrap; }
@@ -166,7 +167,7 @@ PAGE = Template('''<!doctype html>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
           $close
         </button>
-        <p class="close-help" id="close-help" role="status">$manual</p>
+        <p class="close-help" role="status"><span id="close-help">$manual</span><kbd id="close-shortcut" hidden></kbd></p>
         <template id="close-blocked">$blocked</template>
       </div>
     </section>
@@ -176,10 +177,20 @@ PAGE = Template('''<!doctype html>
     // OAuth parameters are no longer needed once the server has handled them.
     try { window.history.replaceState(null, '', window.location.pathname); } catch (_) {}
     const closeButton = document.getElementById('close-tab');
-    closeButton.hidden = false;
+    // Desktop-launched browser tabs cannot reliably be closed by web content.
+    // Only offer the action when this window has a web opener.
+    closeButton.hidden = !window.opener;
+    const shortcut = document.getElementById('close-shortcut');
+    if (/Mac|Win|Linux/.test(navigator.platform) && navigator.maxTouchPoints < 2) {
+      shortcut.textContent = /Mac/.test(navigator.platform) ? '⌘W' : 'Ctrl+W';
+      shortcut.hidden = false;
+    }
     closeButton.addEventListener('click', () => {
       try { window.close(); } catch (_) {}
-      document.getElementById('close-help').textContent = document.getElementById('close-blocked').content.textContent;
+      window.setTimeout(() => {
+        closeButton.hidden = true;
+        document.getElementById('close-help').textContent = document.getElementById('close-blocked').content.textContent;
+      }, 250);
     });
   </script>
 </body>
